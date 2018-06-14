@@ -1,0 +1,1 @@
+-define(ETS_TMAN, ets_tman).

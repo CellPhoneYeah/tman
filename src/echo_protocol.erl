@@ -21,5 +21,6 @@ loop(Socket) ->
             loop(Socket);
         _ ->
             io:format("close"),
-            ok = gen_tcp:close(Socket)
+            ok = gen_tcp:close(Socket),
+            tman_conns:stop_protocol() 
     end.

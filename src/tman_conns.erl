@@ -13,7 +13,8 @@
         ]).
 
 -export([
-         start_protocol/1
+         start_protocol/1,
+         stop_protocol/0
         ]).
 
 -record(conns_state, {
@@ -32,6 +33,9 @@
 start_protocol(Socket) ->
     gen_server:cast(?MODULE, {start_protocol, self(), Socket}).
 
+stop_protocol() ->
+    gen_server:cast(?MODULE, {stop_protocol}).
+
 %%% ================================
 %%% 内部函数
 %%% ================================
@@ -41,12 +45,12 @@ do_handle_call(Request, State) ->
 
 do_handle_cast({start_protocol, SocketHandler, Socket}, State) ->
     #conns_state{
-        current_conns = CurrentConns,
-        max_conns = MaxConns,
-        children_num = ChildrenNum,
-        sleepers = Sleepers,
-        protocol = Protocol,
-        opts = Opts} = State,
+       current_conns = CurrentConns,
+       max_conns = MaxConns,
+       children_num = ChildrenNum,
+       sleepers = Sleepers,
+       protocol = Protocol,
+       opts = Opts} = State,
     {ok, Pid} = Protocol:start_link(Socket, Opts),
     gen_tcp:controlling_process(Socket, Pid),
     NewChildrenNum = ChildrenNum + 1,
@@ -61,11 +65,30 @@ do_handle_cast({start_protocol, SocketHandler, Socket}, State) ->
     end,
     io:format("NewConns ~p,ChildrenNum ~p, Sleepers ~p~n", [NewConns, NewChildrenNum, NewSleepers]),
     NewState = State#conns_state{
-           current_conns = NewConns,
-           children_num = NewChildrenNum,
-           sleepers = NewSleepers},
+                 current_conns = NewConns,
+                 children_num = NewChildrenNum,
+                 sleepers = NewSleepers},
     {ok, NewState};
-    
+do_handle_cast({stop_protocol}, State) ->
+    #conns_state{
+       current_conns = CurrentConns,
+       max_conns = MaxConns,
+       children_num = ChildrenNum,
+       sleepers = Sleepers
+      } = State,
+    NewCurrentConns = CurrentConns - 1,
+    NewChildrenNum = ChildrenNum - 1,
+    case NewCurrentConns < MaxConns of
+        true ->
+            NewSleepers = awake_sleeper(Sleepers);
+        false ->
+            NewSleepers = Sleepers
+    end,
+    NewState = State#conns_state{
+                 current_conns = NewCurrentConns,
+                 children_num = NewChildrenNum,
+                 sleepers = NewSleepers},
+    {ok, NewState};
 do_handle_cast(Request, State) ->
     io:format("bad request ~p~n", [Request]),
     {ok, State}.
@@ -73,6 +96,12 @@ do_handle_cast(Request, State) ->
 do_handle_info(Request, State) ->
     io:format("bad request ~p~n", [Request]),
     {ok, State}.
+
+awake_sleeper([]) ->
+    [];
+awake_sleeper([Sleeper | Tail]) ->
+    Sleeper ! ok,
+    Tail.
 
 %%% ================================
 %%% 回调
